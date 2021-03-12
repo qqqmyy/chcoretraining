@@ -88,6 +88,8 @@ void sys_top(void);
 #define SYS_notify				28
 #define SYS_clock_gettime			29
 #define SYS_clock_nanosleep			30
+#define SYS_ipc_call_flex				31
+#define SYS_ipc_register_cb_return_flex		32
 
 #define SYS_create_pmos                         101
 #define SYS_map_pmos                            102

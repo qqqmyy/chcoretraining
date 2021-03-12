@@ -24,8 +24,10 @@ int main(int argc, char *argv[], char *envp[])
 	if (!token)
 		goto out;
 
+	kinfo("test ipc server:register server!\n");
 	ipc_register_server(server_trampoline,
 			    DEFAULT_CLIENT_REGISTER_HANDLER);
+				// FLEX_CLIENT_REGISTER_HANDLER);
 
 	// TODO: process quit
 	while (1) {

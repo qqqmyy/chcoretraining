@@ -93,7 +93,9 @@
 #define CHCORE_SYS_register_client      10
 
 #define CHCORE_SYS_ipc_register_cb_return 11
+#define CHCORE_SYS_ipc_register_cb_return_flex 32
 #define CHCORE_SYS_ipc_call             12
+#define CHCORE_SYS_ipc_call_flex        31
 #define CHCORE_SYS_ipc_return           13
 #define CHCORE_SYS_ipc_send_cap         14
 #define CHCORE_SYS_cap_copy_to          15

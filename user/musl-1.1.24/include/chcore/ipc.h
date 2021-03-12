@@ -47,6 +47,13 @@ ipc_struct_t *__net_ipc_struct_location();
 #define fs_ipc_struct (__fs_ipc_struct_location())
 #define lwip_ipc_struct (__net_ipc_struct_location())
 
+#if LOG_LEVEL >= INFO
+#define kinfo(fmt, ...) printf("[INFO] "fmt, ##__VA_ARGS__)
+#else
+#define kinfo(fmt, ...)
+#endif
+
+
 /* ipc_msg is located at ipc_struct->shared_buf. */
 typedef struct ipc_msg {
 	u64 data_len;
@@ -55,6 +62,21 @@ typedef struct ipc_msg {
 	u64 cap_slot_number_ret;
 	u64 data_offset;
 	u64 cap_slots_offset;
+
+	u64 client_badge;
+	u64 server_handler;
+	/* ipc msg id in *icb */
+	u64 msg_id;
+
+	int ret;
+	/* for request in shared memory use*/
+	// ipc_msg_status_type_t flex_status;
+	enum{
+		FREE = 0,
+		SUBMITTED,
+		BUSY,
+		DONE
+	} flex_status;
 
 	/* icb: ipc control block (not needed by the kernel) */
 	ipc_struct_t *icb;
@@ -73,6 +95,20 @@ ipc_struct_t *ipc_register_client(int server_thread_cap);
 
 void* register_cb(void *ipc_handler);
 #define DEFAULT_CLIENT_REGISTER_HANDLER register_cb
+// void* register_cb_flex(void *ipc_handler);
+// #define FLEX_CLIENT_REGISTER_HANDLER register_cb_flex
+// void* server_handler_creator(void* ipc_shm_pointer);
+// #define DEFAULT_SERVER_HANDLER_CREATOR server_handler_creator
+
+void* register_cb_flex(void *ipc_handler);
+#define FLEX_CLIENT_REGISTER_HANDLER register_cb_flex
+
+void flex_handler(void* shm_addr);
+void* default_server_handler(void* ipc_msg_pointer);
+#define DEFAULT_FLEX_SERVER_HANDLER default_server_handler
+void* server_handler_creator(void* ipc_msg_pointer);
+#define DEFAULT_SERVER_HANDLER_CREATOR server_handler_creator
+
 int ipc_register_server(server_handler server_handler,
 			void* (*client_register_handler)(void*));
 
@@ -88,7 +124,9 @@ int ipc_destroy_msg(ipc_msg_t *ipc_msg);
 
 /* IPC issue/finish interfaces */
 s64 ipc_call(ipc_struct_t *icb, ipc_msg_t *ipc_msg);
+s64 ipc_call_flex(ipc_struct_t *icb, ipc_msg_t *ipc_msg);
 void ipc_return(ipc_msg_t *ipc_msg, int ret);
+void ipc_return_flex(ipc_msg_t *ipc_msg, int ret);
 void ipc_return_with_cap(ipc_msg_t *ipc_msg, int ret);
 
 int simple_ipc_forward(ipc_struct_t *ipc_struct, void *data, int len);
