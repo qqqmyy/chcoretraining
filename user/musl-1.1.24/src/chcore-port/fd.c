@@ -73,7 +73,7 @@ void free_fd(int fd)
 	fd_dic[fd] = 0;
 }
 
-/* Convert fsm_cap to the ipc_struct将fsm_cap转化为ipc结构
+/* Convert fsm_cap to the ipc_struct
  *
  * the `fsm_cap' is the cap in the fsm (different cap represent different
  * physical fs). It is a const value. `fsm_cap' is used to find the ipc_struct
@@ -86,11 +86,6 @@ void free_fd(int fd)
  * We should use this `libc_cap' to register the physical fs server to become a
  * clinet.
  * The same `fsm_cap' is the key for us to find this physical fs. */
- //fsm_cap是fsm的cap 不同的cap代表不同的物理fs 是常量 fsm用来在哈希表汇总找到IPC结构
- //libc_cap是libc的cap 是不确定值 libc_cap只用第一次和物理文件系统建立连接
- //如果fsm两次向我们发送同一个文件系统的cap，那么我们将得到两个不同的cap 所以fsm只会把它向我们发送一次（把这个cap值复制发送给libc）
- //我们应该使用这个libc_cap来登记这个物理fs服务器 让它变成一个客户端
- //同样的fsm_cap是我们找到这个物理fs的key值
 ipc_struct_t *cap2struct(int fsm_cap, int libc_cap)
 {
 	struct htable *ht = &fs_cap_struct_htable;
@@ -99,12 +94,10 @@ ipc_struct_t *cap2struct(int fsm_cap, int libc_cap)
 	ipc_struct_t *ipc_struct;
 
 	/* init the hash table if it has not been initialized */
-	//初始化哈希表
 	if (!ht->buckets)
 		init_htable(ht, MAX_FD);
 
 	/* search the ipc_struct in the hash table using the fsm_cap */
-	//用fsm_cap在哈希表中查找ipc_struct
 	head = htable_get_bucket(ht, (u32)fsm_cap);
 	for_each_in_hlist(cap_struct, node, head) {
 		if (cap_struct->fsm_cap == fsm_cap) {
@@ -116,7 +109,6 @@ ipc_struct_t *cap2struct(int fsm_cap, int libc_cap)
 	/* if we have registerd the cap, the corresponding ipc_struct will be in
 	 * the target. If the target is NULL, then we have not registered this
 	 * cap yet */
-	 //如果我们登记了这个cap，对应的ipc_struct将会在target中 如果target为空，说明我们还没有登记
 	if (!target) {
 		/* register the cap first using the libc_cap */
 		ipc_struct = ipc_register_client(libc_cap);
@@ -127,7 +119,6 @@ ipc_struct_t *cap2struct(int fsm_cap, int libc_cap)
 		}
 
 		/* add this cap to the hash table */
-		//将这个cap加入哈希表
 		target = malloc(sizeof(struct fs_cap_struct));
 		target->fsm_cap = fsm_cap;
 		target->_fs_ipc_struct = ipc_struct;
@@ -135,7 +126,6 @@ ipc_struct_t *cap2struct(int fsm_cap, int libc_cap)
 	}
 
 	/* now we get the target cap anyway */
-	//现在得到目标taget cap
 	BUG_ON(!target);
 	return target->_fs_ipc_struct;
 }

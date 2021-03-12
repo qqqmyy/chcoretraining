@@ -42,10 +42,9 @@ static int connect_system_server(ipc_struct_t *ipc_struct);
 
 /*
  * ipc_msg_t is constructed on the shm pointed by
- * ipc_struct_t->shared_buf.共享内存
- * A new ips_msg will override the old one.一个新的ipc_msg覆盖旧的ipc_msg
+ * ipc_struct_t->shared_buf.
+ * A new ips_msg will override the old one.
  */
- //从共享内存中获取一个内存区域
 ipc_msg_t *ipc_create_msg(ipc_struct_t *icb, u64 data_len, u64 cap_slot_number)
 {
 	ipc_msg_t *ipc_msg;
@@ -53,28 +52,23 @@ ipc_msg_t *ipc_create_msg(ipc_struct_t *icb, u64 data_len, u64 cap_slot_number)
 
 	if (unlikely(icb->conn_cap == 0)) {
 		/* Create the IPC connection on demand */
-		//创建IPC连接
 		if (connect_system_server(icb) != 0)
 			return NULL;
 	}
 
 	/* Grab the ipc lock before setting ipc msg */
-	//在设置ipc msg之前抢夺IPC锁
 	chcore_spin_lock(&(icb->lock));
 
 	/* The ips_msg metadata is at the beginning of the memory */
-	//ipc_msg元数据在内存开头
 	buf_len = icb->shared_buf_len - sizeof(ipc_msg_t);
 
 	/*
-	 * Check the total length of data and caps.检查数据的长度和caps
+	 * Check the total length of data and caps.
 	 *
 	 * The checks at client side is not for security but for preventing
 	 * unintended errors made by benign clients.
 	 * The server has to validate the ipc msg by itself.
 	 */
-	 //在客户端进行的检查不是为了安全性，而是为了防止良性客户端所犯的意外错误
-	 //服务器必须自己验证ipc msg
 	if (((data_len + sizeof(u64) * cap_slot_number) > buf_len)
 	    || ((data_len + sizeof(u64) * cap_slot_number) < data_len)) {
 		printf("%s failed: too long msg (the usable shm size is 0x%lx)\n",
@@ -92,8 +86,8 @@ ipc_msg_t *ipc_create_msg(ipc_struct_t *icb, u64 data_len, u64 cap_slot_number)
 
 
 	/*
-	 * Zeroing is not that meaningful for shared memory.对共享内存来说 归零没什么意义
-	 * If necessary, the client can explict clear the shm by itself.如果必要，客户端可以自己显式清除shm
+	 * Zeroing is not that meaningful for shared memory.
+	 * If necessary, the client can explict clear the shm by itself.
 	 */
 	return ipc_msg;
 }
@@ -181,6 +175,12 @@ static void ipc_register_cb_return(u64 server_thread_cap,
 	usys_ipc_register_cb_return(server_thread_cap, server_shm_addr);
 }
 
+static void ipc_register_cb_return_flex(u64 server_thread_cap,
+				   u64 server_shm_addr)
+{
+	usys_ipc_register_cb_return_flex(server_thread_cap, server_shm_addr);
+}
+
 /* A register_callback thread is passive (never proactively run) */
 void* register_cb(void *ipc_handler)
 {
@@ -192,8 +192,8 @@ void* register_cb(void *ipc_handler)
 	// printf("[server]: A new client comes in! ipc_handler: 0x%lx\n", ipc_handler);
 
 	/*
-	 * Create a passive thread for serving IPC requests.创建一个被动线程服务IPC请求
-	 * Besides, reusing an existing thread is also supported.支持重复使用一个已存在的线程
+	 * Create a passive thread for serving IPC requests.
+	 * Besides, reusing an existing thread is also supported.
 	 */
 	pthread_t handler_tid;
 	server_thread_cap = chcore_pthread_create_shadow(&handler_tid, NULL,
@@ -205,9 +205,50 @@ void* register_cb(void *ipc_handler)
 	return NULL;
 }
 
+void* register_cb_flex(void *ipc_handler)
+{
+	kinfo("register cb flex.\n");
+    int server_thread_cap = 0;
+    u64 shm_addr;
+
+    shm_addr = get_free_vaddr_for_ipc_shm();
+
+	ipc_msg_t* ipc_msg = (ipc_msg_t*)shm_addr;
+
+    pthread_t handler_tid;
+
+	kinfo("before create\n");
+    server_thread_cap = chcore_pthread_create(&handler_tid, NULL,
+                            ipc_handler, (ipc_msg_t*)shm_addr);
+    BUG_ON(server_thread_cap < 0);
+	kinfo("create!\n");
+	// ipc_register_cb_return(server_thread_cap, shm_addr);
+    ipc_register_cb_return_flex(server_thread_cap, shm_addr);
+}
+
+void flex_handler(void* shm_addr)
+{
+	kinfo("flex handler.\n");
+	ipc_msg_t* ipc_msg = (ipc_msg_t*)shm_addr;
+	while (1)
+	{
+		while (ipc_msg->flex_status != SUBMITTED)
+		{
+			sched_yield();
+		}
+		void (*server_handler)(ipc_msg_t*, u64) = (void (*)(ipc_msg_t*, u64))ipc_msg->server_handler;
+			printf("\nserver handler:\n%p\n",(u64)ipc_msg->server_handler);
+
+		server_handler(ipc_msg, ipc_msg->client_badge);
+		
+	}
+	
+}
+
+
 /*
- * Currently, a server thread can only invoke this interface once.一个服务器线程只能唤醒这个接口一次
- * But, a server can use another thread to register a new service.但一个服务器可以用另一个线程来登记一个新的服务
+ * Currently, a server thread can only invoke this interface once.
+ * But, a server can use another thread to register a new service.
  */
 int ipc_register_server(server_handler server_handler,
 			void* (*client_register_handler)(void*))
@@ -257,15 +298,15 @@ ipc_struct_t *ipc_register_client(int server_thread_cap)
 	int shm_cap;
 
 	/*
-	 * Before registering client on the server,在将客户段登记到服务器上之前
-	 * the client allocates the shm (and shares it with 客户端分配shm 之后将它分享给服务器
+	 * Before registering client on the server,
+	 * the client allocates the shm (and shares it with
 	 * the server later).
 	 *
-	 * Now we used PMO_DATA instead of PMO_SHM because:我们用PMO_DATA代替PMO_SHM是因为
-	 * - SHM (IPC_PER_SHM_SIZE) only contains one page and SHM只包括一页 因此PMO更有效率
+	 * Now we used PMO_DATA instead of PMO_SHM because:
+	 * - SHM (IPC_PER_SHM_SIZE) only contains one page and
 	 *   PMO_DATA is thus more efficient.
 	 *
-	 * If the SHM becomes larger, we can use PMO_SHM instead.如果SHM更大 我们可以用PMO_SHM来代替
+	 * If the SHM becomes larger, we can use PMO_SHM instead.
 	 * Both types are tested and can work well.
 	 */
 
@@ -315,6 +356,7 @@ ipc_struct_t *ipc_register_client(int server_thread_cap)
 /* Client uses **ipc_call** to issue an IPC request */
 s64 ipc_call(ipc_struct_t *icb, ipc_msg_t *ipc_msg)
 {
+	kinfo("ipc call!\n");
 	s64 ret;
 
 	if (unlikely(icb->conn_cap == 0)) {
@@ -331,11 +373,45 @@ s64 ipc_call(ipc_struct_t *icb, ipc_msg_t *ipc_msg)
 	return ret;
 }
 
+s64 ipc_call_flex(ipc_struct_t *icb, ipc_msg_t *ipc_msg)
+{
+	kinfo("ipc_call_flex!\n");	
+	s64 ret;
+
+	// if (unlikely(icb->conn_cap == 0)) {
+	// 	/* Create the IPC connection on demand */
+	// 	if ((ret = connect_system_server(icb)) != 0)
+	// 		return ret;
+	// }
+	if (ipc_msg->cap_slot_number != 0)
+	{
+		ret = usys_ipc_call_flex(icb->conn_cap, (u64)ipc_msg,
+			    ipc_msg->cap_slot_number);
+	}
+	
+	ipc_msg->flex_status = SUBMITTED;
+	while (ipc_msg->flex_status != DONE) {
+		sched_yield();
+	}
+	ipc_msg->flex_status = FREE;
+	return (s64) ipc_msg->ret;
+
+	
+}
+
 /* Server uses **ipc_return** to finish an IPC request */
 void ipc_return(ipc_msg_t *ipc_msg, int ret)
 {
 	ipc_msg->cap_slot_number_ret = 0;
 	usys_ipc_return((u64)ret, 0);
+}
+
+void ipc_return_flex(ipc_msg_t *ipc_msg, int ret)
+{
+	kinfo("ipc return flex!\n");
+	ipc_msg->flex_status = DONE;
+    ipc_msg->cap_slot_number_ret = 0;
+    ipc_msg->ret = ret;
 }
 
 /*
@@ -356,7 +432,8 @@ int simple_ipc_forward(ipc_struct_t *ipc_struct, void *data, int len)
 
 	ipc_msg = ipc_create_msg(ipc_struct, len, 0);
 	ipc_set_msg_data(ipc_msg, data, 0, len);
-	ret = ipc_call(ipc_struct, ipc_msg);
+	// ret = ipc_call(ipc_struct, ipc_msg);
+	ret = ipc_call_flex(ipc_struct, ipc_msg);
 	ipc_destroy_msg(ipc_msg);
 
 	return ret;

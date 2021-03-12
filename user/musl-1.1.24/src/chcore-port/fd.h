@@ -10,27 +10,25 @@
 #define MAX_FD  40960
 #define MIN_FD  0
 
-//fd:进程特有的文件描述符表的索引
-
 /* Type of fd */
 enum fd_type {
-	FD_TYPE_FILE = 0,//文件
-	FD_TYPE_PIPE,//管道
-	FD_TYPE_SOCK,//socket
-	FD_TYPE_STDIN,//输入
-	FD_TYPE_STDOUT,//输出
-	FD_TYPE_STDERR,//标准错误输出
-	FD_TYPE_EVENT,//事件
-	FD_TYPE_TIMER,//计时器
-	FD_TYPE_EPOLL,//可扩展I/O事件通知机制
+	FD_TYPE_FILE = 0,
+	FD_TYPE_PIPE,
+	FD_TYPE_SOCK,
+	FD_TYPE_STDIN,
+	FD_TYPE_STDOUT,
+	FD_TYPE_STDERR,
+	FD_TYPE_EVENT,
+	FD_TYPE_TIMER,
+	FD_TYPE_EPOLL,
 };
 
 struct fd_ops {
-	int (*read) (int fd, void *buf, size_t count);//读
-	int (*write) (int fd, void *buf, size_t count);//写
-	int (*close) (int fd);//关闭
-	int (*poll) (int fd, struct pollarg *arg);//监视并等待多个文件描述符的属性变化
-	int (*ioctl) (int fd, unsigned long request, void *arg);//设备控制接口函数（文件描述符，交互协议，可变参数）
+	int (*read) (int fd, void *buf, size_t count);
+	int (*write) (int fd, void *buf, size_t count);
+	int (*close) (int fd);
+	int (*poll) (int fd, struct pollarg *arg);
+	int (*ioctl) (int fd, unsigned long request, void *arg);
 };
 
 extern struct fd_ops epoll_ops;
@@ -48,24 +46,23 @@ extern struct fd_ops stderr_ops;
  * the `fd_dic`. `fd_desc` structure contains the basic information of
  * the fd.
  */
- //每一个文件描述符fd都有一个fd结构"fd_desc"  fd_dic,fd_desc结构包括文件描述符fd的基础信息
 struct fd_desc {
-	/* Identification used by corresponding service 对应设备的标识号*/
+	/* Identification used by corresponding service */
 	union {
-		int conn_id;//连接id
-		int fd;//文件描述符id
+		int conn_id;
+		int fd;
 	};
-	/* Baisc informantion of fd     fd的基本信息*/
-	int flags;		/* Flags of the file    文件的flag*/
-	int cap;		/* Service's cap of fd, 0 if no service     如果没有设备就是0*/
-	enum fd_type type;	/* Type for debug use   用来debug的类型*/
+	/* Baisc informantion of fd */
+	int flags;		/* Flags of the file */
+	int cap;		/* Service's cap of fd, 0 if no service */
+	enum fd_type type;	/* Type for debug use */
 	struct fd_ops *fd_op;
-	/* Private data of fd   文件描述符fd的私有数据*/
+	/* Private data of fd */
 
 	/* stored termios */
 	struct termios termios;
 
-	void *private_data;//私有数据
+	void *private_data;
 };
 
 extern struct fd_desc *fd_dic[MAX_FD];

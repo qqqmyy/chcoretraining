@@ -98,6 +98,12 @@ u64 usys_ipc_call(u32 conn_cap, u64 ipc_msg_ptr, u64 cap_num)
 			       cap_num);
 }
 
+u64 usys_ipc_call_flex(u32 conn_cap, u64 ipc_msg_ptr, u64 cap_num)
+{
+	return chcore_syscall3(CHCORE_SYS_ipc_call_flex, conn_cap, ipc_msg_ptr,
+			       cap_num);
+}
+
 void usys_ipc_return(u64 ret, u64 cap_num)
 {
 	chcore_syscall6(CHCORE_SYS_ipc_return, ret, cap_num, 0, 0, 0, 0);
@@ -106,12 +112,21 @@ void usys_ipc_return(u64 ret, u64 cap_num)
 void usys_ipc_register_cb_return(u64 server_thread_cap,
 				 u64 server_shm_addr)
 {
+	chcore_syscall6(CHCORE_SYS_ipc_register_cb_return_flex, server_thread_cap,
+		0, 0, 0, 0, 0);
+}
+
+void usys_ipc_register_cb_return_flex(u64 server_thread_cap,
+				 u64 server_shm_addr)
+{
+	printf("\nusys ipc register cb return flex\n");
 	chcore_syscall6(CHCORE_SYS_ipc_register_cb_return, server_thread_cap,
 		server_shm_addr, 0, 0, 0, 0);
 }
 
 u64 usys_ipc_send_cap(u32 conn_cap, u32 send_cap)
 {
+	printf("usys ipc send cap.\n");
 	return chcore_syscall6(CHCORE_SYS_ipc_send_cap, conn_cap, send_cap, 0, 0, 0, 0);
 }
 
