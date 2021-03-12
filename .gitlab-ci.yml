@@ -1,0 +1,165 @@
+stages:
+    - fbinfer
+    - unit_test
+    - basic_test
+    - full_test
+    - perf_test
+
+fbinfer:
+    stage: fbinfer
+    script:
+        - rm -rf build
+        - mkdir build && cd build
+        - cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -DFBINFER=1 ..
+        - infer capture --compilation-database compile_commands.json
+        - infer analyze > fbinfer.res 2>&1
+        - cat fbinfer.res
+        - grep "No issues found" fbinfer.res
+    only:
+        - merge_requests
+
+
+common_test:
+    stage: unit_test
+    script:
+        - cd tests/common
+        - mkdir build && cd build
+        - cmake .. -G Ninja
+        - ninja
+        - ninja test
+    only:
+        - merge_requests
+
+object_test:
+    stage: unit_test
+    script:
+        - cd tests/object
+        - mkdir build && cd build
+        - cmake .. -G Ninja
+        - ninja
+        - ninja test
+    only:
+        - merge_requests
+
+mm_page_table_test:
+    stage: unit_test
+    script:
+        - cd tests/arch/aarch64
+        - mkdir build && cd build
+        - cmake .. -G Ninja
+        - ninja
+        - ninja test
+        - cd ../../x86_64
+        - mkdir build && cd build
+        - cmake .. -G Ninja
+        - ninja
+        - ninja test
+
+    only:
+        - merge_requests
+
+mm_alloctors_test:
+    stage: unit_test
+    script:
+        - cd tests/mm
+        - mkdir build && cd build
+        - cmake .. -G Ninja
+        - ninja
+        - ninja test
+    only:
+        - merge_requests
+
+basic_x86:
+    stage: basic_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_ARCH=x86_64  -DCMAKE_BUILD_TYPE=Release
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_basic_tests.exp
+    only:
+        - merge_requests
+
+basic_raspi:
+    stage: basic_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_PLAT=raspi3 -DCMAKE_BUILD_TYPE=Release
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_basic_tests.exp
+    only:
+        - merge_requests
+
+basic_hikey:
+    stage: basic_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_PLAT=hikey970 -DCMAKE_BUILD_TYPE=Release
+        - cd tools/hikey970
+        - sudo ./build_rootfs.sh
+        - ssh chcore@chcore-pi "sudo ./reset_ch1.py"
+        - sleep 3
+        - sudo fastboot flash system ./rootfs.img &
+        - cd ../..
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_hikey_basic.exp
+    only:
+        - merge_requests
+
+hikey:
+    stage: full_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_PLAT=hikey970 -DCMAKE_BUILD_TYPE=Release -DCHCORE_KERNEL_TEST=ON
+        - cd tools/hikey970
+        - sudo ./build_rootfs.sh
+        - ssh chcore@chcore-pi "sudo ./reset_ch1.py"
+        - sleep 3
+        - sudo fastboot flash system ./rootfs.img &
+        - cd ../..
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_hikey_tests.exp
+    only:
+        - web
+        - schedules
+
+x86_qemu:
+    stage: full_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_ARCH=x86_64  -DCMAKE_BUILD_TYPE=Release -DCHCORE_KERNEL_TEST=ON
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_sys_tests.exp
+    only:
+        - web
+        - schedules
+
+raspi_qemu:
+    stage: full_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_PLAT=raspi3 -DCMAKE_BUILD_TYPE=Release -DCHCORE_KERNEL_TEST=ON
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_sys_tests.exp
+    only:
+        - web
+        - schedules
+
+perf_x86-kvm:
+    stage: perf_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_ARCH=x86_64  -DCMAKE_BUILD_TYPE=Release
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_perf_tests.exp
+    only:
+        - web
+        - schedules
+
+perf_hikey:
+    stage: perf_test
+    script:
+        - rm -rf build
+        - ./scripts/local_build.sh -DCHCORE_PLAT=hikey970 -DCMAKE_BUILD_TYPE=Release
+        - cd tools/hikey970
+        - sudo ./build_rootfs.sh
+        - ssh chcore@chcore-pi "sudo ./reset_ch1.py"
+        - sleep 3
+        - sudo fastboot flash system ./rootfs.img &
+        - cd ../..
+        - ./scripts/expect_wrapper.sh ./scripts/chcore_hikey_perf.exp
+    only:
+        - web
+        - schedules

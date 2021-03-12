@@ -1,0 +1,6 @@
+[submodule "tools/checkpatch"]
+	path = tools/checkpatch
+	url = git@ipads.se.sjtu.edu.cn:jifeiyi/checkpatch.git
+[submodule "user/external/busybox"]
+	path = user/external/busybox
+	url = git@ipads.se.sjtu.edu.cn:ipads-os/busybox.git
