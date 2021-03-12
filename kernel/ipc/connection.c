@@ -638,6 +638,34 @@ out_obj_put:
 	return r;
 }
 
+
+u64 sys_ipc_call_flex(u32 conn_cap, ipc_msg_t *ipc_msg_in_client, u64 cap_num)
+{
+	kinfo("sys_ipc_call_flex\n");
+	struct ipc_connection *conn;
+	int r;
+
+
+	kdebug("In %s\n", __func__);
+
+	/* obj_put will be done in later thread_migrate_to_server */
+	conn = obj_get(current_cap_group, conn_cap, TYPE_CONNECTION);
+	
+	BUG_ON(!conn);
+
+	r = ipc_send_cap(conn, ipc_msg_in_client, cap_num);
+	if (r < 0)
+	{
+		goto out_obj_put;
+	}
+	
+
+out_obj_put:
+	obj_put(conn);
+	return r;
+}
+
+
 void sys_ipc_return(u64 ret, u64 cap_num)
 {
 	struct ipc_server_handler_config *handler_config;
@@ -673,6 +701,100 @@ void sys_ipc_return(u64 ret, u64 cap_num)
 	thread_migrate_to_client(client, ret);
 	BUG("should not reach here\n");
 }
+
+
+void sys_ipc_register_cb_return_flex(u64 server_handler_thread_cap,
+				u64 server_shm_addr)
+{
+	kinfo("enter sys ipc r cb return flex\n");
+	struct ipc_server_register_cb_config *config;
+	struct ipc_connection *conn;
+	struct thread *client_thread;
+
+	struct thread *ipc_server_handler_thread;
+	struct ipc_server_handler_config *handler_config;
+	int r;
+
+	config = (struct ipc_server_register_cb_config *)
+		current_thread->general_ipc_config;
+
+	/* Get the connection currently building */
+	conn = obj_get(current_cap_group, config->conn_cap_in_server,
+		       TYPE_CONNECTION);
+	if (!conn) {
+		kinfo("conn_cap_in_server is %d\n",
+		      config->conn_cap_in_server);
+	}
+
+	BUG_ON(!conn);
+
+	/* Get the client_thread that issues this registration */
+	client_thread = conn->current_client_thread;
+	/*
+	 * Set the return value (conn_cap) for the client here
+	 * because the server has approved the registration.
+	 */
+	arch_set_thread_return(client_thread, config->conn_cap_in_client);
+
+	/*
+	 * @server_handler_thread_cap from server.
+	 * Server uses this handler_thread to serve ipc requests.
+	 */
+	ipc_server_handler_thread =
+		(struct thread *)obj_get(current_cap_group,
+					 server_handler_thread_cap,
+					 TYPE_THREAD);
+	if (!ipc_server_handler_thread) {
+		kinfo("server_handler_thread_cap is %d\n",
+		      server_handler_thread_cap);
+	}
+	BUG_ON(!ipc_server_handler_thread);
+
+	/* Initialize the ipc configuration for the handler_thread (begin) */
+	handler_config = (struct ipc_server_handler_config *)
+		kmalloc(sizeof(*handler_config));
+	ipc_server_handler_thread->general_ipc_config = handler_config;
+	lock_init(&handler_config->ipc_lock);
+
+
+	/*
+	 * Record the initial PC & SP for the handler_thread.
+	 * For serving each IPC, the handler_thread starts from the
+	 * same PC and SP.
+	 */
+	handler_config->ipc_routine_entry =
+		arch_get_thread_next_ip(ipc_server_handler_thread);
+	handler_config->ipc_routine_stack =
+		arch_get_thread_stack(ipc_server_handler_thread);
+	obj_put(ipc_server_handler_thread);
+	/* Initialize the ipc configuration for the handler_thread (end) */
+
+
+	/* Map the shm of the connection in server */
+	r = map_pmo_in_current_cap_group(config->shm_cap_in_server,
+		    server_shm_addr, VMR_READ | VMR_WRITE);
+	BUG_ON(r != 0);
+	kdebug("server process: %p, map shm at 0x%lx\n", current_cap_group,
+	      server_shm_addr);
+
+	ipc_msg_t *ipc_msg = (ipc_msg_t*)server_shm_addr;
+	r = copy_to_user((char *)ipc_msg->client_badge,(char *)conn->client_badge,sizeof(u64));
+
+	r = sched_enqueue(ipc_server_handler_thread);
+
+	/* Fill the server information in the IPC connection. */
+	conn->shm.server_shm_uaddr = server_shm_addr;
+	conn->server_handler_thread = ipc_server_handler_thread;
+	conn->current_client_thread = NULL;
+	obj_put(conn);
+
+	/* Finish the registration: switch to the original client_thread */
+	unlock(&config->register_lock);
+	kinfo("leave\n");
+	switch_to_thread(client_thread);
+	eret_to_thread(switch_context());
+}
+
 
 void sys_ipc_register_cb_return(u64 server_handler_thread_cap,
 				u64 server_shm_addr)

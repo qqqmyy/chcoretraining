@@ -48,14 +48,20 @@ static int connect_system_server(ipc_struct_t *ipc_struct);
  //从共享内存中获取一个内存区域
 ipc_msg_t *ipc_create_msg(ipc_struct_t *icb, u64 data_len, u64 cap_slot_number)
 {
+	kinfo("create msg.\n");
 	ipc_msg_t *ipc_msg;
 	u64 buf_len;
 
 	if (unlikely(icb->conn_cap == 0)) {
 		/* Create the IPC connection on demand */
 		//创建IPC连接
+		kinfo("connection create\n");
 		if (connect_system_server(icb) != 0)
+		{
+			kinfo("connection failed.\n");
 			return NULL;
+		}
+		kinfo("connection succeed.\n");
 	}
 
 	/* Grab the ipc lock before setting ipc msg */
@@ -90,7 +96,7 @@ ipc_msg_t *ipc_create_msg(ipc_struct_t *icb, u64 data_len, u64 cap_slot_number)
 	ipc_msg->data_offset = sizeof(*ipc_msg);
 	ipc_msg->cap_slots_offset = ipc_msg->data_offset + data_len;
 
-
+	kinfo("create success.\n");
 	/*
 	 * Zeroing is not that meaningful for shared memory.对共享内存来说 归零没什么意义
 	 * If necessary, the client can explict clear the shm by itself.如果必要，客户端可以自己显式清除shm
@@ -181,6 +187,12 @@ static void ipc_register_cb_return(u64 server_thread_cap,
 	usys_ipc_register_cb_return(server_thread_cap, server_shm_addr);
 }
 
+static void ipc_register_cb_return_flex(u64 server_thread_cap,
+				   u64 server_shm_addr)
+{
+	usys_ipc_register_cb_return_flex(server_thread_cap, server_shm_addr);
+}
+
 /* A register_callback thread is passive (never proactively run) */
 void* register_cb(void *ipc_handler)
 {
@@ -203,6 +215,25 @@ void* register_cb(void *ipc_handler)
 	ipc_register_cb_return(server_thread_cap, shm_addr);
 
 	return NULL;
+}
+
+void* register_cb_flex(void *ipc_handler)
+{
+	kinfo("register cb flex.\n");
+    int server_thread_cap = 0;
+    u64 shm_addr;
+
+    shm_addr = get_free_vaddr_for_ipc_shm();
+
+	ipc_msg_t* ipc_msg = (ipc_msg_t*)shm_addr;
+
+    pthread_t handler_tid;
+
+    server_thread_cap = chcore_pthread_create_shadow(&handler_tid, NULL,
+                            ipc_handler, (ipc_msg_t*)shm_addr);
+    BUG_ON(server_thread_cap < 0);
+	// ipc_register_cb_return(server_thread_cap, shm_addr);
+    ipc_register_cb_return_flex(server_thread_cap, shm_addr);
 }
 
 /*
@@ -315,6 +346,7 @@ ipc_struct_t *ipc_register_client(int server_thread_cap)
 /* Client uses **ipc_call** to issue an IPC request */
 s64 ipc_call(ipc_struct_t *icb, ipc_msg_t *ipc_msg)
 {
+	
 	s64 ret;
 
 	if (unlikely(icb->conn_cap == 0)) {
@@ -331,11 +363,40 @@ s64 ipc_call(ipc_struct_t *icb, ipc_msg_t *ipc_msg)
 	return ret;
 }
 
+s64 ipc_call_flex(ipc_struct_t *icb, ipc_msg_t *ipc_msg)
+{
+	kinfo("ipc call flex.\n");
+	s64 ret;
+
+	if (ipc_msg->cap_slot_number != 0)
+	{
+		ret = usys_ipc_call_flex(icb->conn_cap, (u64)ipc_msg,
+			    ipc_msg->cap_slot_number);
+	}
+	
+	ipc_msg->flex_status = SUBMITTED;
+	while (ipc_msg->flex_status != DONE) {
+		sched_yield();
+	}
+	ipc_msg->flex_status = FREE;
+	return (s64) ipc_msg->ret;
+
+}
+
 /* Server uses **ipc_return** to finish an IPC request */
 void ipc_return(ipc_msg_t *ipc_msg, int ret)
 {
+	// kinfo("ipc return.\n");
 	ipc_msg->cap_slot_number_ret = 0;
 	usys_ipc_return((u64)ret, 0);
+}
+
+void ipc_return_flex(ipc_msg_t *ipc_msg, int ret)
+{
+	kinfo("ipc return flex!\n");
+	ipc_msg->flex_status = DONE;
+    ipc_msg->cap_slot_number_ret = 0;
+    ipc_msg->ret = ret;
 }
 
 /*
@@ -357,6 +418,19 @@ int simple_ipc_forward(ipc_struct_t *ipc_struct, void *data, int len)
 	ipc_msg = ipc_create_msg(ipc_struct, len, 0);
 	ipc_set_msg_data(ipc_msg, data, 0, len);
 	ret = ipc_call(ipc_struct, ipc_msg);
+	ipc_destroy_msg(ipc_msg);
+
+	return ret;
+}
+
+int simple_ipc_forward_flex(ipc_struct_t *ipc_struct, void *data, int len)
+{
+	ipc_msg_t *ipc_msg;
+	int ret;
+
+	ipc_msg = ipc_create_msg(ipc_struct, len, 0);
+	ipc_set_msg_data(ipc_msg, data, 0, len);
+	ret = ipc_call_flex(ipc_struct, ipc_msg);
 	ipc_destroy_msg(ipc_msg);
 
 	return ret;

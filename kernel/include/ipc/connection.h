@@ -110,6 +110,21 @@ typedef struct ipc_msg {
 	u64 cap_slot_number_ret;
 	u64 data_offset;
 	u64 cap_slots_offset;
+
+	u64 client_badge;
+	u64 server_handler;
+	/* ipc msg id in *icb */
+	u64 msg_id;
+
+	int ret;
+	/* for request in shared memory use*/
+	// ipc_msg_status_type_t flex_status;
+	enum{
+		FREE = 0,
+		SUBMITTED,
+		BUSY,
+		DONE
+	} flex_status;
 } ipc_msg_t;
 
 
@@ -117,7 +132,9 @@ typedef struct ipc_msg {
 u64 sys_register_server(u64 ipc_rountine, u64 register_cb_cap);
 u32 sys_register_client(u32 server_cap, u64 vm_config_ptr);
 void sys_ipc_register_cb_return(u64, u64);
+void sys_ipc_register_cb_return_flex(u64,u64);
 
 u64 sys_ipc_call(u32 conn_cap, ipc_msg_t *ipc_msg, u64 cap_num);
+u64 sys_ipc_call_flex(u32 conn_cap, ipc_msg_t *ipc_msg, u64 cap_num);
 void sys_ipc_return(u64 ret, u64 cap_num);
 u64 sys_ipc_send_cap(u32 conn_cap, u32 send_cap);

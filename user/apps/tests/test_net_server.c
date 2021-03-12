@@ -77,6 +77,7 @@ void *handle_thread(void *arg)
 
 int main(int argc, char *argv[], char *envp[])
 {
+	info("test_net_server.\n");
 
 	int server_fd = 0;
 	int ret = 0;

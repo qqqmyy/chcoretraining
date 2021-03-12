@@ -200,6 +200,266 @@ int free_socket(u64 badge, int conn_id)
 }
 
 
+int lwip_dispatch_content(ipc_msg_t * ipc_msg, u64 client_badge)
+{
+	info("lwip dispatch content.\n");
+	int ret = 0, i = 0;
+	int socket = 0, accpet_fd = 0, port = 0, len = 0, flags = 0, backlog =
+	    0;
+	int domain = 0, protocol = 0, type = 0, level = 0, optname = 0;
+	socklen_t alen = 0, optlen = 0, namelen = 0;
+	struct msghdr *msg;
+	int shared_pmo = 0;
+	struct sockaddr target;
+
+	if (ipc_msg->data_len >= 4) {
+		struct lwip_request *lr =
+		    (struct lwip_request *)ipc_get_msg_data(ipc_msg);
+		switch (lr->req) {
+		case LWIP_CREATE_SOCKET:
+			debug("LWIP_CREATE_SOCKET\n");
+			domain = lr->args[0];
+			type = lr->args[1];
+			protocol = lr->args[2];
+			socket = lwip_socket(domain, type, protocol);
+			/* only set socket when succ */
+			ret = (socket >= 0)? set_socket(client_badge, socket):socket;
+			debug("LWIP_CREATE_SOCKET return %d\n", ret);
+			break;
+		case LWIP_SOCKET_BIND:
+			debug("LWIP_SOCKET_BIND\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			len = lr->args[1];
+#ifdef DEBUG	/* Print the basic info of bind */
+			struct sockaddr_in *sockaddr = (struct sockaddr_in *)lr->data;
+			char IP[16];
+			lwip_inet_ntop(AF_INET, (char *)&sockaddr->sin_addr, IP, sizeof(IP));
+			int port = ntohs(sockaddr->sin_port);
+			debug("BIND to %s:%d\n", IP, port);
+#endif
+			ret =
+			    lwip_bind(socket, (struct sockaddr *)lr->data, len);
+			break;
+		case LWIP_SOCKET_RECV:
+			/* here we will call recvfrom rather than recv */
+			debug("LWIP_SOCKET_RECV\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			len = lr->args[1];
+			flags = lr->args[2];
+			alen = lr->args[3];
+			if (alen > 0)
+				memcpy(&target, ((char *)lr->data + len), alen);
+			/* XXX: data? */
+			ret = lwip_recvfrom(socket, lr->data, len, flags, &target, &alen);
+			if (alen > 0)
+				memcpy(((char *)lr->data + len), &target, alen);
+			debug("LWIP_SOCKET_RECV return %d\n", ret);
+			lr->args[3] = alen;
+			break;
+		case LWIP_SOCKET_READ:
+			debug("LWIP_SOCKET_READ\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			len = lr->args[1];
+			ret = lwip_read(socket, lr->data, len);
+			break;
+		case LWIP_SOCKET_RMSG:
+			debug("LWIP_SOCKET_RMSG\n");
+			struct sockaddr target;
+			socket = get_socket(client_badge, lr->args[0]);
+			flags = lr->args[1];
+			len = lr->args[2];
+			if (len > LWIP_DATA_LEN) {
+				if (ipc_msg->cap_slot_number != 1) {
+					ret = -EINVAL;
+					goto out;
+				}
+				shared_pmo = ipc_get_msg_cap(ipc_msg, 0);
+				msg = malloc(len);
+				/* XXX: can be optimized */
+				usys_read_pmo(shared_pmo, 0, msg, len);
+				update_msg_ptr(msg);
+				ret = lwip_recvmsg(socket, msg, flags);
+				usys_write_pmo(shared_pmo, 0, msg, len);
+				free(msg);
+			} else {
+				msg = (struct msghdr *)lr->data;
+				update_msg_ptr(msg);
+				ret = lwip_recvmsg(socket, msg, flags);
+			}
+			break;
+		case LWIP_SOCKET_SEND:
+			/* here we will call sendto rather than send */
+			debug("LWIP_SOCKET_SEND\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			len = lr->args[1];
+			flags = lr->args[2];
+			alen = (socklen_t) lr->args[3];
+			if (alen > 0)
+				memcpy(&target, ((char *)lr->data + len), alen);
+			ret =
+			    lwip_sendto(socket, lr->data, len, flags, &target, alen);
+			debug("LWIP_SOCKET_SEND return %d\n", ret);
+			break;
+		case LWIP_SOCKET_WRITE:
+			socket = get_socket(client_badge, lr->args[0]);
+			debug("LWIP_SOCKET_WRITE socket %d badge %d args %d\n", socket, client_badge, lr->args[0]);
+			len = lr->args[1];
+			ret = lwip_write(socket, lr->data, len);
+			debug("LWIP_SOCKET_WRITE return %d %d\n", ret, errno);
+			break;
+		case LWIP_SOCKET_SMSG:
+			debug("LWIP_SOCKET_SMSG\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			flags = lr->args[1];
+			len = lr->args[2];
+			if (len > LWIP_DATA_LEN) {
+				if (ipc_msg->cap_slot_number != 1) {
+					ret = -EINVAL;
+					goto out;
+				}
+				shared_pmo = ipc_get_msg_cap(ipc_msg, 0);
+				msg = malloc(len);
+				usys_read_pmo(shared_pmo, 0, msg, len);
+				update_msg_ptr(msg);
+				ret = lwip_sendmsg(socket, msg, flags);
+				free(msg);
+			} else {
+				msg = (struct msghdr *)lr->data;
+				update_msg_ptr(msg);
+				ret = lwip_sendmsg(socket, msg, flags);
+			}
+			break;
+		case LWIP_SOCKET_LIST:
+			debug("LWIP_SOCKET_LIST\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			backlog = lr->args[1];
+			ret = lwip_listen(socket, backlog);
+			break;
+		case LWIP_SOCKET_CONN:
+			debug("LWIP_SOCKET_CONN\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			len = lr->args[1];
+			ret = lwip_connect(socket, (struct sockaddr *)lr->data,
+					   len);
+			break;
+		case LWIP_SOCKET_ACPT:
+			debug("LWIP_SOCKET_ACPT\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			len = lr->args[1];
+			accpet_fd =
+			    lwip_accept(socket, (struct sockaddr *)lr->data,
+					&len);
+			/* only set socket when succ */
+			ret = (accpet_fd >= 0)? set_socket(client_badge, accpet_fd):accpet_fd;
+			/* set len to pass it back */
+			lr->args[1] = len;
+			break;
+		case LWIP_SOCKET_CLSE:
+			debug("LWIP_SOCKET_CLSE\n");
+			socket =
+			    get_socket(client_badge, lr->args[0]);
+			ret = lwip_close(socket);
+			if (ret >= 0)
+				ret = free_socket(client_badge, lr->args[0]);
+			break;
+		case LWIP_SOCKET_SOPT:
+			debug("LWIP_SOCKET_SOPT\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			level = lr->args[1];
+			optname = lr->args[2];
+			optlen = lr->args[3];
+			ret = lwip_setsockopt(socket, level, optname,
+						    lr->data, optlen);
+			break;
+		case LWIP_SOCKET_GOPT:
+			debug("LWIP_SOCKET_GOPT\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			level = lr->args[1];
+			optname = lr->args[2];
+			optlen = lr->args[3];
+			ret = lwip_getsockopt(socket, level, optname,
+						    lr->data, &optlen);
+			lr->args[3] = optlen;
+			break;
+		case LWIP_SOCKET_NAME:
+			debug("LWIP_SOCKET_NAME\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			namelen = lr->args[1];
+			if (namelen == -1)
+				ret = -EINVAL;
+			else
+				ret =
+				    lwip_getsockname(socket,
+						     (struct sockaddr *)lr->
+						     data, &namelen);
+			lr->args[1] = namelen;
+			break;
+		case LWIP_SOCKET_PEER:
+			debug("LWIP_SOCKET_PEER\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			namelen = lr->args[1];
+			if (namelen == -1)
+				ret = -EINVAL;
+			else
+				ret =
+				    lwip_getpeername(socket,
+						     (struct sockaddr *)lr->
+						     data, &namelen);
+			lr->args[1] = namelen;
+			break;
+		case LWIP_SOCKET_STDW:
+			debug("LWIP_SOCKET_STDW\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			ret = lwip_shutdown(socket, lr->args[1]);
+			break;
+		case LWIP_REQ_SOCKET_POLL: {
+			debug("LWIP_SOCKET_POLL\n");
+			unsigned long nfds = lr->args[1];
+			unsigned long timeout = lr->args[2];
+			struct pollfd *fd_iter, *client_fd_iter;
+
+			for (i = 0; i < nfds; i++) {
+				fd_iter = ((struct pollfd *)lr->data) + i;
+				fd_iter->fd = get_socket(client_badge, fd_iter->fd);
+			}
+			ret = lwip_poll((struct pollfd *)lr->data, nfds, timeout);
+			break;
+		}
+		case LWIP_SOCKET_IOCTL:
+			debug("LWIP_SOCKET_IOCTL\n");
+			socket = get_socket(client_badge, lr->args[0]);
+			long cmd = lr->args[1];
+			ret = lwip_ioctl(socket, cmd, lr->data);
+			break;
+		defaule:
+			printf("lwip not impl req:%d\n", lr->req);
+			ret = -EINVAL;
+		}
+
+	} else {
+		/* No OP NUMBER */
+		ret = -EINVAL;
+	}
+out:
+	return ret;
+}
+
+void lwip_dispatch_flex(ipc_msg_t * ipc_msg)
+{
+	info("lwip dispatch flex.\n");
+	int ret;
+	while (1)
+	{
+		while (ipc_msg->flex_status != SUBMITTED)
+		{
+			sched_yield();
+		}
+		ret = lwip_dispatch_content(ipc_msg,ipc_msg->client_badge);
+		ipc_return_flex(ipc_msg,ret);
+	}
+	// ipc_return_flex(ipc_msg,ret);
+}
+
 void lwip_dispatch(ipc_msg_t * ipc_msg, u64 client_badge)
 {
 	int ret = 0, i = 0;
@@ -486,8 +746,11 @@ int main(int argc, char *argv[], char *envp[])
 	info("Add netif %lx\n", &netif);
 
 	info("register server value = %u\n",
-	     ipc_register_server(lwip_dispatch,
-				 DEFAULT_CLIENT_REGISTER_HANDLER));
+	    //  ipc_register_server(lwip_dispatch,
+		// 		 DEFAULT_CLIENT_REGISTER_HANDLER));
+
+			ipc_register_server(lwip_dispatch_flex,
+				 FLEX_CLIENT_REGISTER_HANDLER));
 
 	while (1) {
 		usys_yield();

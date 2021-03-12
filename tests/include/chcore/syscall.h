@@ -18,6 +18,7 @@ int usys_create_cap_group(u64 badge, char *name, u64 name_len);
 u64 usys_register_server(u64 ipc_handler, u64 reigster_cb_cap);
 u32 usys_register_client(u32 server_cap, u64 vm_config_ptr);
 u64 usys_ipc_call(u32 conn_cap, u64 ipc_msg_ptr, u64 cap_num);
+u64 usys_ipc_call_flex(u32 conn_cap, u64 ipc_msg_ptr, u64 cap_num);
 void usys_ipc_return(u64 ret, u64 cap_num);
 void usys_ipc_register_cb_return(u64, u64);
 u64 usys_ipc_send_cap(u32 conn_cap, u32 send_cap);

@@ -37,7 +37,8 @@ static int __lwip_ipc(ipc_msg_t **ipc_msg_p, enum LWIP_REQ req, void *data,
 		BUG_ON(data_size > LWIP_DATA_LEN);
 		memcpy(lr_ptr->data, data, data_size);
 	}
-	ret = ipc_call(lwip_ipc_struct, ipc_msg);
+	// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+	ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 	if (ipc_msg_p)
 		*ipc_msg_p = ipc_msg;
 	else
@@ -71,7 +72,8 @@ static int chcore_socket_read(int fd, void *buf, size_t count)
 		while (remain > 0 && ret == len) {
 			len = remain > LWIP_DATA_LEN ? LWIP_DATA_LEN : remain;
 			lr_ptr->args[1] = len;
-			if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0) {
+			// if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0) {
+			if ((ret = ipc_call_flex(lwip_ipc_struct, ipc_msg)) < 0) {
 				ret = bias > 0 ? bias : ret;
 				goto out;
 			}
@@ -87,7 +89,8 @@ static int chcore_socket_read(int fd, void *buf, size_t count)
 	//其余的 一个单独的ipc就足够了
 		lr_ptr->req = LWIP_SOCKET_READ;
 		lr_ptr->args[1] = count; /* len */
-		if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0)
+		// if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0)
+		if ((ret = ipc_call_flex(lwip_ipc_struct, ipc_msg)) < 0)
 			goto out;
 		BUG_ON(ret > LWIP_DATA_LEN);
 		memcpy(buf, lr_ptr->data, ret);
@@ -123,7 +126,8 @@ static int chcore_socket_write(int fd, void *buf, size_t count)
 			len = remain > LWIP_DATA_LEN ? LWIP_DATA_LEN : remain;
 			memcpy(lr_ptr->data, (void *)((char *)buf + bias), len);
 			lr_ptr->args[1] = len; /* len */
-			if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0) {
+			// if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0) {
+			if ((ret = ipc_call_flex(lwip_ipc_struct, ipc_msg)) < 0) {
 				ret = bias > 0 ? bias : ret;
 				goto out;
 			}
@@ -135,7 +139,8 @@ static int chcore_socket_write(int fd, void *buf, size_t count)
 		/* Else one single ipc is enough */
 		memcpy(lr_ptr->data, buf, count);
 		lr_ptr->args[1] = count; /* len */
-		ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 	}
 out:
 	ipc_destroy_msg(ipc_msg);
@@ -150,7 +155,8 @@ static int chcore_socket_close(int fd)
 
 	lr.req = LWIP_SOCKET_CLSE;
 	lr.args[0] = fd_dic[fd]->conn_id;
-	ret = simple_ipc_forward(lwip_ipc_struct, &lr, sizeof(lr));
+	// ret = simple_ipc_forward(lwip_ipc_struct, &lr, sizeof(lr));
+	ret = simple_ipc_forward_flex(lwip_ipc_struct, &lr, sizeof(lr));
 	if (ret < 0)
 		return ret;
 	free_fd(fd);
@@ -197,7 +203,8 @@ static int __chcore_socket_poll(struct pollfd fds[], nfds_t nfds, int timeout,
 		}
 	}
 
-	ret = ipc_call(lwip_ipc_struct, ipc_msg);
+	// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+	ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 
 	if (update_fds) {
 		/* Copy the return value */
@@ -503,7 +510,8 @@ int chcore_sendto(int fd, const void *buf, size_t len, int flags,
 			lr_ptr->args[1] = copylen;
 			memcpy(lr_ptr->data, (char *)buf + bias, copylen);
 			memcpy(lr_ptr->data + copylen, (void *)addr, alen);
-			if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0)
+			// if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0)
+			if ((ret = ipc_call_flex(lwip_ipc_struct, ipc_msg)) < 0)
 				break; /* Error occur */
 			bias += ret;
 			remain -= ret;
@@ -514,7 +522,8 @@ int chcore_sendto(int fd, const void *buf, size_t len, int flags,
 		lr_ptr->args[1] = len;
 		memcpy(lr_ptr->data, (void *)buf, len);
 		memcpy(lr_ptr->data + len, (void *)addr, alen);
-		ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 	}
 	ipc_destroy_msg(ipc_msg);
 	return ret;
@@ -556,7 +565,8 @@ int chcore_recvfrom(int fd, void *restrict buf, size_t len, int flags,
 				      : remain;
 			lr_ptr->args[1] = copylen;
 			memcpy(lr_ptr->data + copylen, (void *)addr, alen_val);
-			if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0) {
+			// if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0) {
+			if ((ret = ipc_call_flex(lwip_ipc_struct, ipc_msg)) < 0) {
 				/* Already received messages? */
 				ret = bias > 0 ? bias : ret;
 				goto out;
@@ -577,7 +587,8 @@ int chcore_recvfrom(int fd, void *restrict buf, size_t len, int flags,
 		lr_ptr->args[1] = len;
 		if (alen != 0 && *alen != 0)
 			memcpy(lr_ptr->data + len, (void *)addr, *alen);
-		if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0)
+		// if ((ret = ipc_call(lwip_ipc_struct, ipc_msg)) < 0)
+		if ((ret = ipc_call_flex(lwip_ipc_struct, ipc_msg)) < 0)
 			goto out;
 		BUG_ON(ret > LWIP_DATA_LEN);
 		memcpy((void *)buf, lr_ptr->data, ret);
@@ -618,7 +629,8 @@ int chcore_sendmsg(int fd, const struct msghdr *msg, int flags)
 	if (len > LWIP_DATA_LEN) {
 		ipc_set_msg_cap(ipc_msg, 0, shared_pmo);
 	}
-	ret = ipc_call(lwip_ipc_struct, ipc_msg);
+	// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+	ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 	/* TODO: Destroy PMO here */
 out:
 	ipc_destroy_msg(ipc_msg);
@@ -650,7 +662,8 @@ int chcore_recvmsg(int fd, struct msghdr *msg, int flags)
 		goto out;
 	if (len > LWIP_DATA_LEN) {
 		ipc_set_msg_cap(ipc_msg, 0, shared_pmo);
-		ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 		recvbuf = malloc(len);
 		usys_read_pmo(shared_pmo, 0, recvbuf, len);
 		/* XXX: Directly read pmo in unpack message */
@@ -658,7 +671,8 @@ int chcore_recvmsg(int fd, struct msghdr *msg, int flags)
 		free(recvbuf);
 		ipc_destroy_msg(ipc_msg);
 	} else {
-		ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		// ret = ipc_call(lwip_ipc_struct, ipc_msg);
+		ret = ipc_call_flex(lwip_ipc_struct, ipc_msg);
 		unpack_message(msg, lr_ptr->data);
 	}
 out:

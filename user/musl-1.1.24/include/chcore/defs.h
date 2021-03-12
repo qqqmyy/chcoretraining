@@ -112,6 +112,8 @@
 #define CHCORE_SYS_notify		28
 #define CHCORE_SYS_clock_gettime	29
 #define CHCORE_SYS_clock_nanosleep	30
+#define CHCORE_SYS_ipc_call_flex        31
+#define CHCORE_SYS_ipc_register_cb_return_flex 32
 
 #define CHCORE_SYS_create_pmos          101
 #define CHCORE_SYS_map_pmos             102
